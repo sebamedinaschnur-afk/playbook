@@ -1,26 +1,58 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Playbook design language — lifted from playbook-prototype-v2.html /
+  playbook-signup-flow.html (spec §1: dark charcoal UI, green #3DBE8B primary,
+  brass #C9A24B secondary, Archivo for headings/numbers, Public Sans for body).
+*/
+
+@theme {
+  --color-app: #070a0d; /* outermost background */
+  --color-bg: #10151a; /* screen background */
+  --color-panel: #1a2129;
+  --color-panel2: #222b35;
+  --color-line: #2e3944;
+  --color-ink: #edf1f4;
+  --color-muted: #93a1ad;
+  --color-faint: #5f6e7a;
+
+  --color-green: #3dbe8b;
+  --color-green-deep: #0e2a21;
+  --color-green-tint: #16382c;
+  --color-green-border: #235844;
+
+  --color-brass: #c9a24b;
+  --color-brass-bg: #2e2615;
+
+  --color-red: #e06a5e;
+  --color-red-bg: #34201d;
+
+  --color-blue: #5fa8e0;
+  --color-blue-bg: #16242f;
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--color-app);
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-app);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Tabular figures for money/numbers, matching the prototype's `.num`. */
+.tnum {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Range inputs use the green accent across the app. */
+input[type="range"] {
+  accent-color: var(--color-green);
 }

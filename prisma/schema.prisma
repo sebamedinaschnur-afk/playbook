@@ -1,0 +1,220 @@
+// Playbook — data model
+// See playbook-mvp-spec.md §4 (Data model) and §2 (In scope).
+// Prisma 7 "prisma-client" generator. DATABASE_URL is supplied via prisma.config.ts (dotenv).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth & user
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  hashedPassword String
+  emailVerified  DateTime?
+  name           String?
+
+  // Onboarding answers (spec §2.1)
+  sport              String?
+  year               String? // Freshman | Sophomore | Junior | Senior | Pro
+  careerHorizonYears Int? // 1-12
+  hasNilDeals        Boolean?
+  estMonthlyNil      Int? // whole dollars, monthly NIL income estimate
+  paymentChannels    String[] @default([]) // direct_deposit | school_collective | cash_venmo
+  onboardingComplete Boolean  @default(false)
+
+  // School sponsorship
+  school   School? @relation(fields: [schoolId], references: [id])
+  schoolId String?
+
+  plaidItems   PlaidItem[]
+  accounts     Account[]
+  transactions Transaction[]
+  rules        Rule[]
+  alerts       Alert[]
+  goals        Goal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  id         String   @id @default(cuid())
+  identifier String // the email being verified
+  token      String   @unique
+  expires    DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([identifier])
+}
+
+// ---------------------------------------------------------------------------
+// School / access codes (spec §2.1 — hardcoded test codes e.g. CANES26)
+// ---------------------------------------------------------------------------
+
+model School {
+  id          String       @id @default(cuid())
+  name        String
+  accessCodes AccessCode[]
+  users       User[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model AccessCode {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  active    Boolean  @default(true)
+  school    School   @relation(fields: [schoolId], references: [id])
+  schoolId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Plaid (spec §2.2, §4 — access tokens encrypted at rest, never sent to client)
+// ---------------------------------------------------------------------------
+
+model PlaidItem {
+  id                 String    @id @default(cuid())
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String
+  itemId             String    @unique // Plaid item_id
+  accessTokenEnc     String // AES-256-GCM encrypted Plaid access_token
+  institutionId      String?
+  institutionName    String?
+  transactionsCursor String? // Plaid transactions/sync cursor
+  accounts           Account[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model Account {
+  id               String        @id @default(cuid())
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String
+  plaidItem        PlaidItem     @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+  plaidItemId      String
+  plaidAccountId   String        @unique
+  name             String
+  officialName     String?
+  mask             String? // last 4
+  type             String? // depository, investment, etc.
+  subtype          String?
+  institutionName  String?
+  currentBalance   Float?
+  availableBalance Float?
+  isoCurrencyCode  String?
+  transactions     Transaction[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model Transaction {
+  id                 String   @id @default(cuid())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId          String
+  plaidTransactionId String   @unique
+  date               DateTime
+  // Plaid convention: positive = money out of the account, negative = money in.
+  amount             Float
+  name               String
+  merchantName       String?
+  category           String?
+  pending            Boolean  @default(false)
+  isTransfer         Boolean  @default(false) // transfer between user's own accounts
+  isoCurrencyCode    String?
+  createdAt          DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+// ---------------------------------------------------------------------------
+// Rules engine (spec §2.4) & Alerts (spec §2.5)
+// ---------------------------------------------------------------------------
+
+enum RuleType {
+  TAX_SET_ASIDE // percent of NIL income
+  MONTHLY_SAVINGS // dollars/month target
+  SPENDING_THRESHOLD // dollars/month ceiling
+}
+
+enum RuleUnit {
+  PERCENT
+  DOLLARS
+}
+
+model Rule {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  type        RuleType
+  value       Float
+  unit        RuleUnit
+  explanation String // one-line plain-English "why"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, type])
+}
+
+enum AlertType {
+  SPENDING
+  TAX_REMINDER
+  LARGE_DEPOSIT
+}
+
+model Alert {
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  type        AlertType
+  title       String
+  body        String
+  dedupeKey   String // stable key so the same alert isn't created twice
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Goals — "Next Season" life-after-sport planning (the differentiator)
+// ---------------------------------------------------------------------------
+
+enum GoalCategory {
+  HOME
+  BUSINESS
+  EDUCATION
+  FAMILY
+  INDEPENDENCE
+  REAL_ESTATE
+  OTHER
+}
+
+model Goal {
+  id                  String       @id @default(cuid())
+  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId              String
+  title               String
+  category            GoalCategory
+  targetAmount        Float
+  targetDate          DateTime
+  monthlyContribution Float        @default(0)
+  currentSaved        Float        @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([userId])
+}
