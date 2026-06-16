@@ -22,7 +22,9 @@ async function hasValidSession(req: NextRequest): Promise<boolean> {
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isPublic = PUBLIC_ROUTES.has(pathname);
+  // The signup fork lives at /signup and its sub-paths (/signup/school, etc.) — all public.
+  const isSignup = pathname === "/signup" || pathname.startsWith("/signup/");
+  const isPublic = PUBLIC_ROUTES.has(pathname) || isSignup;
   const loggedIn = await hasValidSession(req);
 
   // Root: send to the right place.
@@ -34,7 +36,7 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.nextUrl));
   }
 
-  if (isPublic && loggedIn && (pathname === "/login" || pathname === "/signup")) {
+  if (isPublic && loggedIn && (pathname === "/login" || isSignup)) {
     return NextResponse.redirect(new URL("/home", req.nextUrl));
   }
 

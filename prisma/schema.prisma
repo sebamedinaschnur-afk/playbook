@@ -41,6 +41,7 @@ model User {
   rules        Rule[]
   alerts       Alert[]
   goals        Goal[]
+  redeemedCode AccessCode? // the single-use code this user redeemed, if any
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -57,7 +58,8 @@ model VerificationToken {
 }
 
 // ---------------------------------------------------------------------------
-// School / access codes (spec §2.1 — hardcoded test codes e.g. CANES26)
+// School / access codes (spec §2.1). Codes are UNIQUE PER STUDENT and SINGLE-USE:
+// a code locks to the first account that redeems it, so it can't be shared/reused.
 // ---------------------------------------------------------------------------
 
 model School {
@@ -75,6 +77,12 @@ model AccessCode {
   active    Boolean  @default(true)
   school    School   @relation(fields: [schoolId], references: [id])
   schoolId  String
+
+  // Single-use redemption: set when an account activates with this code.
+  redeemedBy   User?     @relation(fields: [redeemedById], references: [id])
+  redeemedById String?   @unique
+  redeemedAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

@@ -13,7 +13,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "gen:codes": "tsx prisma/genCodes.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

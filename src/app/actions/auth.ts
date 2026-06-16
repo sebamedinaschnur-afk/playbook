@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { SignupSchema, LoginSchema } from "@/lib/validation";
+import { SignupSchema, LoginSchema, SchoolCodeSchema } from "@/lib/validation";
 import { createSession, deleteSession } from "@/lib/session";
 
 export type AuthState =
@@ -32,6 +32,14 @@ async function issueVerification(email: string): Promise<string> {
   return url;
 }
 
+const CODE_INVALID =
+  "That code isn't recognized. Double-check it with your athletic department, or sign up as an individual instead.";
+const CODE_USED =
+  "This code has already been used to activate an account. Check with your athletic department.";
+
+// Thrown inside the redeem transaction to roll it back with a user-facing message.
+class CodeError extends Error {}
+
 export async function signup(_state: AuthState, formData: FormData): Promise<AuthState> {
   const parsed = SignupSchema.safeParse({
     email: formData.get("email"),
@@ -48,20 +56,34 @@ export async function signup(_state: AuthState, formData: FormData): Promise<Aut
     return { errors: { email: ["An account with this email already exists."] } };
   }
 
-  // Optional school access code links the user to a school (spec §2.1).
-  let schoolId: string | undefined;
-  if (accessCode) {
-    const code = await prisma.accessCode.findUnique({ where: { code: accessCode } });
-    if (!code || !code.active) {
-      return { errors: { accessCode: ["That access code isn't valid."] } };
-    }
-    schoolId = code.schoolId;
-  }
-
   const hashedPassword = await bcrypt.hash(password, 12);
-  await prisma.user.create({
-    data: { email, hashedPassword, schoolId },
-  });
+
+  if (accessCode) {
+    // School path: redeem the SINGLE-USE code atomically while creating the
+    // account, so a code can't be shared or used twice (even under a race).
+    try {
+      await prisma.$transaction(async (tx) => {
+        const code = await tx.accessCode.findUnique({ where: { code: accessCode } });
+        if (!code || !code.active) throw new CodeError(CODE_INVALID);
+        if (code.redeemedById) throw new CodeError(CODE_USED);
+
+        const user = await tx.user.create({
+          data: { email, hashedPassword, schoolId: code.schoolId },
+        });
+        const claimed = await tx.accessCode.updateMany({
+          where: { id: code.id, redeemedById: null },
+          data: { redeemedById: user.id, redeemedAt: new Date() },
+        });
+        if (claimed.count === 0) throw new CodeError(CODE_USED); // lost the race — rolls back
+      });
+    } catch (e) {
+      if (e instanceof CodeError) return { errors: { accessCode: [e.message] } };
+      throw e;
+    }
+  } else {
+    // Individual path: no school link.
+    await prisma.user.create({ data: { email, hashedPassword } });
+  }
 
   const devVerifyUrl = await issueVerification(email);
   return {
@@ -69,6 +91,25 @@ export async function signup(_state: AuthState, formData: FormData): Promise<Aut
     message: "Account created. Check your email to verify your address.",
     devVerifyUrl,
   };
+}
+
+export type SchoolCodeResult =
+  | { ok: true; schoolName: string }
+  | { ok: false; reason: "invalid" | "used" };
+
+// Validates a school access code against the DB (spec §2.1). Codes are single-use,
+// so an already-redeemed code is reported distinctly from an unrecognized one.
+export async function validateSchoolCode(rawCode: string): Promise<SchoolCodeResult> {
+  const parsed = SchoolCodeSchema.safeParse({ accessCode: rawCode });
+  if (!parsed.success) return { ok: false, reason: "invalid" };
+
+  const code = await prisma.accessCode.findUnique({
+    where: { code: parsed.data.accessCode },
+    include: { school: true },
+  });
+  if (!code || !code.active) return { ok: false, reason: "invalid" };
+  if (code.redeemedById) return { ok: false, reason: "used" };
+  return { ok: true, schoolName: code.school.name };
 }
 
 export async function login(_state: AuthState, formData: FormData): Promise<AuthState> {

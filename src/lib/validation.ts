@@ -21,6 +21,15 @@ export const LoginSchema = z.object({
   password: z.string().min(1, { error: "Password is required." }),
 });
 
+// School path: a non-empty access code, normalised (trimmed + uppercased).
+export const SchoolCodeSchema = z.object({
+  accessCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(1, { error: "Enter your school code." }),
+});
+
 export const SPORTS = [
   "Football",
   "Basketball",
