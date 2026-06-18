@@ -13,6 +13,7 @@ export type TransactionLike = {
   amount: number; // Plaid convention: positive = money out of the account
   date: Date;
   isTransfer: boolean;
+  isSelfTransfer?: boolean;
 };
 
 export type Allocation = {
@@ -68,6 +69,6 @@ export function monthlySpending(
 ): number {
   const start = startOfMonth(now);
   return transactions
-    .filter((t) => !t.isTransfer && t.amount > 0 && t.date >= start)
+    .filter((t) => !t.isTransfer && !t.isSelfTransfer && t.amount > 0 && t.date >= start)
     .reduce((sum, t) => sum + t.amount, 0);
 }

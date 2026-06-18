@@ -43,6 +43,11 @@ model User {
   goals        Goal[]
   redeemedCode AccessCode? // the single-use code this user redeemed, if any
 
+  // Input-payment addendum
+  manualPayments  ManualPayment[]
+  goalAllocations GoalAllocation[]
+  reserveMarks    ReserveMark[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -140,9 +145,15 @@ model Transaction {
   merchantName       String?
   category           String?
   pending            Boolean  @default(false)
-  isTransfer         Boolean  @default(false) // transfer between user's own accounts
+  isTransfer         Boolean  @default(false) // Plaid-category transfer hint (any transfer)
   isoCurrencyCode    String?
   createdAt          DateTime @default(now())
+
+  // Input-payment addendum (spec §3.5)
+  isSelfTransfer Boolean   @default(false) // confirmed +/- pair between user's own accounts
+  incomeTag      IncomeTag @default(UNTAGGED)
+  // Reconciliation: 1:1 link to a merged ManualPayment (back-side of the relation).
+  reconciledManualPayment ManualPayment? @relation("Reconciliation")
 
   @@index([userId, date])
 }
@@ -180,6 +191,7 @@ enum AlertType {
   SPENDING
   TAX_REMINDER
   LARGE_DEPOSIT
+  TAG_INCOME
 }
 
 model Alert {
@@ -220,9 +232,119 @@ model Goal {
   targetAmount        Float
   targetDate          DateTime
   monthlyContribution Float        @default(0)
+  // DEPRECATED by the input-payment addendum: progress is now SUM(GoalAllocation.amount),
+  // computed on read. Existing values are backfilled into a MANUAL_ADHOC allocation.
   currentSaved        Float        @default(0)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
+  allocations GoalAllocation[]
+
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Input Payment & Reconciliation addendum (playbook-input-payment-spec.md §3)
+// Money amounts use Float to match the existing Transaction.amount (so the
+// reconciliation match math compares like-for-like); values are rounded to cents.
+// All totals (reserve target/marked, goal progress) are computed on read from
+// these source records — never stored as running totals (spec non-negotiable).
+// ---------------------------------------------------------------------------
+
+enum ManualPaymentKind {
+  NIL_DEAL
+  OTHER_INCOME
+}
+
+enum PaymentMethod {
+  CASH
+  APP // Venmo / Cash App / etc.
+  COLLECTIVE
+  CHECK
+}
+
+enum ManualPaymentStatus {
+  ACTIVE
+  MERGED
+  KEPT_SEPARATE
+}
+
+enum GoalAllocationSource {
+  MANUAL_PAYMENT
+  MANUAL_ADHOC
+}
+
+enum IncomeTag {
+  UNTAGGED
+  NIL_INCOME
+  NOT_INCOME
+}
+
+model ManualPayment {
+  id                String              @id @default(cuid())
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  amount            Float
+  kind              ManualPaymentKind
+  method            PaymentMethod
+  payer             String?
+  occurredOn        DateTime
+  taxSetAsideAmount Float // snapshot of amount * set-aside rate, captured at log time
+  status            ManualPaymentStatus @default(ACTIVE)
+
+  // Reconciliation: when merged, links to the matched bank Transaction (1:1).
+  reconciledTransaction   Transaction? @relation("Reconciliation", fields: [reconciledTransactionId], references: [id])
+  reconciledTransactionId String?      @unique
+
+  allocations GoalAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model GoalAllocation {
+  id         String               @id @default(cuid())
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  goal       Goal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  goalId     String
+  amount     Float
+  sourceType GoalAllocationSource
+
+  // When sourced from a manual payment, deleting that payment cascades the allocation.
+  sourceManualPayment   ManualPayment? @relation(fields: [sourceManualPaymentId], references: [id], onDelete: Cascade)
+  sourceManualPaymentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([goalId])
+}
+
+model ReserveMark {
+  id       String   @id @default(cuid())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+  amount   Float
+  markedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Quarterly estimated-tax due dates (spec §8, decision §2.10): seeded data, not
+// hardcoded. statutoryDate is the nominal date; the weekend/holiday →
+// next-business-day adjustment is applied on read (lib/taxDates.ts, piece 6).
+// NOTE: review/extend these annually.
+model QuarterlyTaxDate {
+  id            String   @id @default(cuid())
+  taxYear       Int // tax year the estimated payment applies to
+  quarter       Int // 1..4
+  statutoryDate DateTime
+  createdAt     DateTime @default(now())
+
+  @@unique([taxYear, quarter])
 }

@@ -3,9 +3,11 @@ import { getCurrentUser } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
+import { InputPaymentLauncher } from "@/components/InputPaymentLauncher";
 import { totalTrackedBalance, monthlySpending } from "@/lib/money";
 import { upcomingTaxDueDate } from "@/lib/alerts";
 import { monthsUntil, projectedValue, isOnTrack, progressPct } from "@/lib/goals";
+import { getGoalsWithSaved } from "@/lib/goalsService";
 import { ROLE_MODELS } from "@/lib/roleModels";
 import { COMMUNITY_STATS, COMMUNITY_HEADLINE } from "@/lib/communityStats";
 
@@ -33,7 +35,7 @@ export default async function HomePage() {
       },
     }),
     prisma.rule.findMany({ where: { userId: user.id } }),
-    prisma.goal.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    getGoalsWithSaved(user.id),
   ]);
 
   const ruleVal = (t: string) => rules.find((r) => r.type === t)?.value ?? 0;
@@ -49,7 +51,7 @@ export default async function HomePage() {
   const behindGoal = goals.find(
     (g) =>
       !isOnTrack(
-        projectedValue(g.currentSaved, g.monthlyContribution, monthsUntil(g.targetDate, now)),
+        projectedValue(g.saved, g.monthlyContribution, monthsUntil(g.targetDate, now)),
         g.targetAmount,
       ),
   );
@@ -148,13 +150,13 @@ export default async function HomePage() {
         <Link href="/goals" className="mt-3 block rounded-2xl border border-line bg-panel p-4">
           <div className="flex items-center justify-between">
             <p className="text-[11px] uppercase tracking-wide text-faint">Top goal</p>
-            <span className="text-xs text-green">{Math.round(progressPct(topGoal.currentSaved, topGoal.targetAmount))}%</span>
+            <span className="text-xs text-green">{Math.round(progressPct(topGoal.saved, topGoal.targetAmount))}%</span>
           </div>
           <p className="mt-1 text-sm font-medium">{topGoal.title}</p>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-bg">
             <span
               className="block h-full rounded-full bg-green"
-              style={{ width: `${progressPct(topGoal.currentSaved, topGoal.targetAmount)}%` }}
+              style={{ width: `${progressPct(topGoal.saved, topGoal.targetAmount)}%` }}
             />
           </div>
         </Link>
@@ -232,6 +234,9 @@ export default async function HomePage() {
           You&apos;re building something most athletes never do. You&apos;re in good company.
         </p>
       </div>
+
+      {/* Quick-add manual payment (spec §4.1) */}
+      <InputPaymentLauncher variant="fab" goals={goals} />
     </>
   );
 }

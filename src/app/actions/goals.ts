@@ -22,7 +22,17 @@ export async function createGoal(_state: GoalState, formData: FormData): Promise
     return { errors: parsed.error.flatten().fieldErrors };
   }
 
-  await prisma.goal.create({ data: { userId, ...parsed.data } });
+  // Progress is SUM(GoalAllocation). Store the goal with currentSaved=0 and turn any
+  // "already saved" starting amount into a MANUAL_ADHOC allocation (addendum §3.2).
+  const { currentSaved, ...goalData } = parsed.data;
+  const goal = await prisma.goal.create({
+    data: { userId, ...goalData, currentSaved: 0 },
+  });
+  if (currentSaved > 0) {
+    await prisma.goalAllocation.create({
+      data: { userId, goalId: goal.id, amount: currentSaved, sourceType: "MANUAL_ADHOC" },
+    });
+  }
   revalidatePath("/goals");
   return { ok: true };
 }

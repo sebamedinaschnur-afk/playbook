@@ -21,6 +21,25 @@ export const LoginSchema = z.object({
   password: z.string().min(1, { error: "Password is required." }),
 });
 
+// Input-payment addendum: manual payment entry (spec §4.2).
+export const MANUAL_PAYMENT_KINDS = ["NIL_DEAL", "OTHER_INCOME"] as const;
+export const PAYMENT_METHODS = ["CASH", "APP", "COLLECTIVE", "CHECK"] as const;
+
+export const ManualPaymentSchema = z.object({
+  amount: z.coerce
+    .number()
+    .positive({ error: "Enter an amount greater than $0." })
+    .max(10_000_000),
+  kind: z.enum(MANUAL_PAYMENT_KINDS),
+  method: z.enum(PAYMENT_METHODS),
+  payer: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+});
+
 // School path: a non-empty access code, normalised (trimmed + uppercased).
 export const SchoolCodeSchema = z.object({
   accessCode: z

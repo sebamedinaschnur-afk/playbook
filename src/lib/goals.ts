@@ -44,6 +44,14 @@ export function projectedValue(
   return Math.round(fvCurrent + fvContrib);
 }
 
+/**
+ * A goal's saved amount = SUM of its allocations (addendum §3.2). Computed on
+ * read from GoalAllocation rows — never a stored running total that can drift.
+ */
+export function goalSaved(allocationAmounts: number[]): number {
+  return Math.round(allocationAmounts.reduce((s, a) => s + a, 0) * 100) / 100;
+}
+
 export function progressPct(currentSaved: number, targetAmount: number): number {
   if (targetAmount <= 0) return 0;
   return Math.min(100, Math.max(0, (currentSaved / targetAmount) * 100));

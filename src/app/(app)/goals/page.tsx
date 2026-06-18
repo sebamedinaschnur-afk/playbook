@@ -1,9 +1,11 @@
 import { getCurrentUser } from "@/lib/dal";
 import { prisma } from "@/lib/prisma";
 import { ProjectionWidget } from "@/components/ProjectionWidget";
+import { GoalAllocateForm } from "@/components/GoalAllocateForm";
 import { AddGoal } from "./AddGoal";
 import { deleteGoal } from "@/app/actions/goals";
 import { templateFor } from "@/lib/goalTemplates";
+import { getGoalsWithSaved } from "@/lib/goalsService";
 import {
   monthsUntil,
   requiredMonthlyContribution,
@@ -23,7 +25,7 @@ export default async function GoalsPage() {
   const years = user.careerHorizonYears ?? 4;
 
   const [goals, accounts, recent, rules] = await Promise.all([
-    prisma.goal.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    getGoalsWithSaved(user.id),
     prisma.account.findMany({ where: { userId: user.id } }),
     prisma.transaction.findMany({
       where: {
@@ -39,7 +41,9 @@ export default async function GoalsPage() {
   const spendThreshold = rules.find((r) => r.type === "SPENDING_THRESHOLD")?.value ?? 0;
 
   const tracked = totalTrackedBalance(accounts);
-  const spend = monthlySpending(recent.map((t) => ({ amount: t.amount, date: t.date, isTransfer: t.isTransfer })));
+  const spend = monthlySpending(
+    recent.map((t) => ({ amount: t.amount, date: t.date, isTransfer: t.isTransfer, isSelfTransfer: t.isSelfTransfer })),
+  );
   // Burn = the bigger of actual recent spending and their planned monthly budget,
   // so the runway reflects a realistic lifestyle (sandbox spending is artificially low).
   const monthlyBurn = Math.max(spend, spendThreshold);
@@ -77,9 +81,9 @@ export default async function GoalsPage() {
         {goals.map((g) => {
           const tpl = templateFor(g.category);
           const months = monthsUntil(g.targetDate, now);
-          const required = requiredMonthlyContribution(g.targetAmount, g.currentSaved, months);
-          const projected = projectedValue(g.currentSaved, g.monthlyContribution, months);
-          const pct = progressPct(g.currentSaved, g.targetAmount);
+          const required = requiredMonthlyContribution(g.targetAmount, g.saved, months);
+          const projected = projectedValue(g.saved, g.monthlyContribution, months);
+          const pct = progressPct(g.saved, g.targetAmount);
           const onTrack = isOnTrack(projected, g.targetAmount);
 
           return (
@@ -110,7 +114,7 @@ export default async function GoalsPage() {
                 />
               </div>
               <p className="mt-1.5 text-xs text-muted">
-                {usd(g.currentSaved)} saved · {Math.round(pct)}% there ·{" "}
+                {usd(g.saved)} saved · {Math.round(pct)}% there ·{" "}
                 <span className="text-faint">
                   {usd(g.monthlyContribution)}/mo set · ~{usd(required)}/mo to finish on time
                 </span>
@@ -128,6 +132,8 @@ export default async function GoalsPage() {
                   </li>
                 ))}
               </ul>
+
+              <GoalAllocateForm goalId={g.id} />
 
               <form action={deleteGoal} className="mt-3">
                 <input type="hidden" name="id" value={g.id} />

@@ -1,7 +1,10 @@
-// Deterministic alert computation (spec §2.5). Pure + unit-tested. The caller
-// persists these descriptors as Alert rows (deduped by dedupeKey).
+// Deterministic alert computation (spec §2.5 + addendum §7). Pure + unit-tested.
+// The caller persists these descriptors as Alert rows (deduped by dedupeKey).
+import { upcomingDueDate } from "@/lib/quarterlyTax";
 
-export type AlertType = "SPENDING" | "TAX_REMINDER" | "LARGE_DEPOSIT";
+export type AlertType = "SPENDING" | "TAX_REMINDER" | "LARGE_DEPOSIT" | "TAG_INCOME";
+
+export type IncomeTag = "UNTAGGED" | "NIL_INCOME" | "NOT_INCOME";
 
 export type AlertDescriptor = {
   type: AlertType;
@@ -17,6 +20,8 @@ export type AlertTransaction = {
   isTransfer: boolean;
   name: string;
   merchantName: string | null;
+  incomeTag?: IncomeTag; // defaults to UNTAGGED
+  isSelfTransfer?: boolean;
 };
 
 export type ComputeAlertsInput = {
@@ -26,6 +31,9 @@ export type ComputeAlertsInput = {
   taxSetAsidePct: number;
   estMonthlyNil: number;
   recentTransactions: AlertTransaction[];
+  // Effective (business-day-adjusted) quarterly due dates from QuarterlyTaxDate.
+  // When omitted, falls back to the hardcoded statutory dates.
+  taxDueDates?: Date[];
 };
 
 export const LARGE_DEPOSIT_MIN = 1000;
@@ -73,8 +81,9 @@ export function computeAlerts(input: ComputeAlertsInput): AlertDescriptor[] {
     });
   }
 
-  // 2. Quarterly tax reminder (within 30 days of a due date).
-  const due = upcomingTaxDueDate(now);
+  // 2. Quarterly tax reminder (within 30 days of a due date). Prefer the
+  // table-driven, business-day-adjusted dates; fall back to statutory months.
+  const due = input.taxDueDates ? upcomingDueDate(input.taxDueDates, now) : upcomingTaxDueDate(now);
   if (due) {
     const monthlyTax = Math.round((estMonthlyNil * taxSetAsidePct) / 100);
     out.push({
@@ -85,18 +94,31 @@ export function computeAlerts(input: ComputeAlertsInput): AlertDescriptor[] {
     });
   }
 
-  // 3. Large deposit detected (>= $1,000 inflow, not a transfer).
+  // 3. Large inflow (>= $1,000), excluding transfers and self-transfers.
+  //    UNTAGGED  → prompt the user to tag it (§7). NIL_INCOME → set-aside nudge.
   for (const t of input.recentTransactions) {
-    const isDeposit = !t.isTransfer && t.amount <= -LARGE_DEPOSIT_MIN;
-    if (!isDeposit) continue;
+    const isInflow = !t.isTransfer && !t.isSelfTransfer && t.amount <= -LARGE_DEPOSIT_MIN;
+    if (!isInflow) continue;
     const amount = Math.abs(t.amount);
-    const setAside = Math.round((amount * taxSetAsidePct) / 100);
-    out.push({
-      type: "LARGE_DEPOSIT",
-      title: "Large deposit detected",
-      body: `${usd(amount)} from ${t.merchantName ?? t.name} just landed. Consider setting aside ${taxSetAsidePct}% (~${usd(setAside)}) for taxes.`,
-      dedupeKey: `DEPOSIT-${t.plaidTransactionId}`,
-    });
+    const who = t.merchantName ?? t.name;
+    const tag = t.incomeTag ?? "UNTAGGED";
+
+    if (tag === "UNTAGGED") {
+      out.push({
+        type: "TAG_INCOME",
+        title: "Is this NIL income?",
+        body: `${usd(amount)} from ${who} landed in your bank. Tag it so your tax plan stays accurate.`,
+        dedupeKey: `TAG-${t.plaidTransactionId}`,
+      });
+    } else if (tag === "NIL_INCOME") {
+      const setAside = Math.round((amount * taxSetAsidePct) / 100);
+      out.push({
+        type: "LARGE_DEPOSIT",
+        title: "Large NIL deposit",
+        body: `${usd(amount)} from ${who} — consider setting aside ${taxSetAsidePct}% (~${usd(setAside)}) for taxes.`,
+        dedupeKey: `DEPOSIT-${t.plaidTransactionId}`,
+      });
+    }
   }
 
   return out;

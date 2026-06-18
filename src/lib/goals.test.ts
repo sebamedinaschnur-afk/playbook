@@ -6,7 +6,23 @@ import {
   progressPct,
   isOnTrack,
   runwayMonths,
+  goalSaved,
 } from "./goals";
+
+describe("goalSaved", () => {
+  it("sums allocation amounts (progress on read)", () => {
+    expect(goalSaved([500, 250, 0.5])).toBe(750.5);
+  });
+  it("is 0 with no allocations", () => {
+    expect(goalSaved([])).toBe(0);
+  });
+  it("drops by the removed amount when an allocation is removed", () => {
+    const before = goalSaved([500, 300]);
+    const after = goalSaved([500]); // one allocation removed
+    expect(before).toBe(800);
+    expect(after).toBe(500);
+  });
+});
 
 describe("monthsUntil", () => {
   it("counts whole months and floors at 0", () => {

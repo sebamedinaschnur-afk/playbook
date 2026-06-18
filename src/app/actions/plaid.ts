@@ -7,6 +7,7 @@ import { verifySession } from "@/lib/dal";
 import { encrypt } from "@/lib/crypto";
 import { syncPlaidItem, syncAllForUser } from "@/lib/plaidSync";
 import { generateAlerts } from "@/lib/alertsService";
+import { classifySelfTransfers } from "@/lib/classifyService";
 
 // Exchanges a Plaid public_token for an access_token (SERVER-SIDE ONLY, spec §4),
 // stores it encrypted, then pulls accounts + transactions.
@@ -38,6 +39,7 @@ export async function exchangePublicToken(
   });
 
   await syncPlaidItem(item.id);
+  await classifySelfTransfers(userId);
   await generateAlerts(userId);
 
   revalidatePath("/money");
@@ -50,6 +52,7 @@ export async function exchangePublicToken(
 export async function refreshData(): Promise<{ ok: boolean }> {
   const { userId } = await verifySession();
   await syncAllForUser(userId);
+  await classifySelfTransfers(userId);
   await generateAlerts(userId);
   revalidatePath("/money");
   revalidatePath("/home");
