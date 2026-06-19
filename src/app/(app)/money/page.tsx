@@ -6,6 +6,7 @@ import { InputPaymentLauncher } from "@/components/InputPaymentLauncher";
 import { ReserveTracker } from "@/components/ReserveTracker";
 import { ReconcileBanner } from "@/components/ReconcileBanner";
 import { InflowTagControl } from "@/components/InflowTagControl";
+import { DeletePaymentButton } from "@/components/DeletePaymentButton";
 import { getReserveData } from "@/lib/reserveService";
 import { getGoalsWithSaved } from "@/lib/goalsService";
 import { findBestMatch } from "@/lib/reconciliationService";
@@ -252,6 +253,7 @@ export default async function MoneyPage() {
                           </button>
                         </form>
                       ) : null}
+                      {it.manual ? <DeletePaymentButton paymentId={it.id} /> : null}
                     </span>
                   ) : null}
                   {it.taggable ? <InflowTagControl txnId={it.id} /> : null}

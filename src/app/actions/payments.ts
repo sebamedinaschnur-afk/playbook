@@ -61,3 +61,20 @@ export async function logManualPayment(
   revalidatePath("/alerts");
   return { ok: true, amount: payment.amount, setAside, paymentId: payment.id };
 }
+
+// Delete a manual payment and fully roll back its effects (decision #9). Because
+// reserve target and goal progress are computed on read, removing the row + its
+// allocations restores both exactly. If it was merged, deleting the row clears
+// reconciledTransactionId, so the bank line returns to its prior (unreconciled) state.
+export async function deleteManualPayment(paymentId: string): Promise<{ ok: boolean }> {
+  const { userId } = await verifySession();
+  await prisma.$transaction([
+    prisma.goalAllocation.deleteMany({ where: { userId, sourceManualPaymentId: paymentId } }),
+    prisma.manualPayment.deleteMany({ where: { id: paymentId, userId } }),
+  ]);
+  revalidatePath("/money");
+  revalidatePath("/home");
+  revalidatePath("/goals");
+  revalidatePath("/alerts");
+  return { ok: true };
+}

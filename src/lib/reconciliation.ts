@@ -5,6 +5,13 @@
 
 const DAY_MS = 86_400_000;
 
+// Date window for a reconciliation match. Widened from 7 → 14 days: cash /
+// collective / check income often clears through the bank a week+ after it's
+// logged. Wider catches real duplicates; the cost is the occasional false flag,
+// which is low-harm because merging is always user-confirmed and still gated by
+// the amount tolerance.
+export const MATCH_WINDOW_DAYS = 14;
+
 export function daysBetween(a: Date, b: Date): number {
   return Math.abs((a.getTime() - b.getTime()) / DAY_MS);
 }
@@ -26,7 +33,7 @@ export type RankedCandidate = {
 export function qualifies(p: MatchPayment, t: MatchTxn): boolean {
   return (
     Math.abs(t.magnitude - p.amount) <= amountTolerance(p.amount) &&
-    daysBetween(t.date, p.occurredOn) <= 7
+    daysBetween(t.date, p.occurredOn) <= MATCH_WINDOW_DAYS
   );
 }
 
@@ -44,10 +51,10 @@ export function rankCandidates(p: MatchPayment, txns: MatchTxn[]): RankedCandida
         txnId: t.id,
         amountDistance,
         dateDistance,
-        score: amountDistance / tol + dateDistance / 7,
+        score: amountDistance / tol + dateDistance / MATCH_WINDOW_DAYS,
       };
     })
-    .filter((c) => c.amountDistance <= tol && c.dateDistance <= 7)
+    .filter((c) => c.amountDistance <= tol && c.dateDistance <= MATCH_WINDOW_DAYS)
     .sort((a, b) => a.score - b.score);
 }
 

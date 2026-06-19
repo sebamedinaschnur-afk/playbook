@@ -38,9 +38,16 @@ describe("matching rule (§5)", () => {
     expect(bestCandidate(p, [{ id: "t", magnitude: 560, date: plus(1) }])).toBeNull();
   });
 
-  it("just-outside-tolerance does NOT match (date too far)", () => {
+  it("matches a $500 inflow 8 days after the manual entry (within the 14-day window)", () => {
     const p: MatchPayment = { amount: 500, occurredOn: D };
-    expect(qualifies(p, { id: "t", magnitude: 500, date: plus(8) })).toBe(false);
+    const t: MatchTxn = { id: "bank8d", magnitude: 500, date: plus(8) };
+    expect(qualifies(p, t)).toBe(true);
+    expect(bestCandidate(p, [t])?.txnId).toBe("bank8d");
+  });
+
+  it("does NOT match beyond the 14-day window", () => {
+    const p: MatchPayment = { amount: 500, occurredOn: D };
+    expect(qualifies(p, { id: "t", magnitude: 500, date: plus(15) })).toBe(false);
   });
 
   it("uses 5% when it exceeds $25 on larger amounts", () => {
